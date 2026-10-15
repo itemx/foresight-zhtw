@@ -57,9 +57,52 @@ static SherpaOnnxVadModelConfig g_vad_cfg;
 static Stream g_streams[MAX_STREAMS];
 static char g_dir[1024], g_model[1200], g_tokens[1200], g_vad_model[1200], g_lib[1200];
 
+// OpenCC (dlopen'ed, optional): SenseVoice writes Simplified Chinese, Taiwan
+// wants Traditional. ~/tools/foresight-zh/opencc holds the config name
+// (default s2twp: Traditional + Taiwan phrases) or "off".
+static void *g_cc;  // opencc_t
+static char *(*p_opencc_convert_utf8)(void *, const char *, size_t);
+static void (*p_opencc_convert_utf8_free)(char *);
+static char g_cc_lib[1200], g_cc_cfg[1200];
+
 static int exists(const char *p) {
   struct stat st;
   return stat(p, &st) == 0;
+}
+
+void sv_load_opencc(void) {
+  if (!g_cc_cfg[0] || g_cc) return;
+  void *h = dlopen(g_cc_lib, RTLD_NOW | RTLD_LOCAL);
+  void *(*open_)(const char *) = h ? dlsym(h, "opencc_open") : NULL;
+  p_opencc_convert_utf8 = h ? dlsym(h, "opencc_convert_utf8") : NULL;
+  p_opencc_convert_utf8_free = h ? dlsym(h, "opencc_convert_utf8_free") : NULL;
+  if (!open_ || !p_opencc_convert_utf8 || !p_opencc_convert_utf8_free) {
+    logf_("opencc: %s not loadable (%s) - transcripts stay Simplified", g_cc_lib, dlerror());
+    return;
+  }
+  g_cc = open_(g_cc_cfg);
+  if (g_cc == (void *)-1) g_cc = NULL;
+  logf_("opencc: %s %s", g_cc_cfg, g_cc ? "ready" : "failed to open");
+}
+
+static int has_kana(const char *s) {
+  // Hiragana/Katakana are U+3040..U+30FF: UTF-8 E3 81 80 .. E3 83 BF.
+  for (const unsigned char *p = (const unsigned char *)s; p[0] && p[1] && p[2]; p++)
+    if (p[0] == 0xE3 && p[1] >= 0x81 && p[1] <= 0x83) return 1;
+  return 0;
+}
+
+char *sv_convert(char *text, const char *lang) {
+  // ponytail: lang is SenseVoice's label ("<|zh|>", "<|ja|>", ...); without one,
+  // guess from kana. Japanese kanji must not be mapped to Chinese forms.
+  int zh = lang && *lang ? (strstr(lang, "zh") || strstr(lang, "yue")) != 0 : !has_kana(text);
+  if (!g_cc || !zh) return text;
+  char *out = p_opencc_convert_utf8(g_cc, text, (size_t)-1);
+  if (!out) return text;
+  char *r = strdup(out);
+  p_opencc_convert_utf8_free(out);
+  free(text);
+  return r;
 }
 
 static int load_symbols(void) {
@@ -125,6 +168,7 @@ static void *load_thread(void *arg) {
     g_vad_cfg.sample_rate = VAD_RATE;
     g_vad_cfg.num_threads = 1;
     g_vad_cfg.provider = "cpu";
+    sv_load_opencc();
   }
   pthread_mutex_lock(&g_mu);
   g_state = ok ? 1 : -1;
@@ -140,6 +184,15 @@ int sv_available(const char *home) {
   snprintf(g_tokens, sizeof g_tokens, "%s/sensevoice/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/tokens.txt", g_dir);
   snprintf(g_vad_model, sizeof g_vad_model, "%s/sensevoice/silero_vad.onnx", g_dir);
   snprintf(g_lib, sizeof g_lib, "%s/sherpa-onnx/lib/libsherpa-onnx-c-api.dylib", g_dir);
+  char name[64] = "s2twp", p[1024];
+  snprintf(p, sizeof p, "%s/tools/foresight-zh/opencc", home);
+  FILE *f = fopen(p, "r");
+  if (f) {
+    if (fgets(name, sizeof name, f)) name[strcspn(name, "\r\n")] = 0;
+    fclose(f);
+  }
+  snprintf(g_cc_lib, sizeof g_cc_lib, "%s/opencc/lib/libopencc.dylib", g_dir);
+  if (strcmp(name, "off") != 0) snprintf(g_cc_cfg, sizeof g_cc_cfg, "%s/opencc/share/opencc/%s.json", g_dir, name);
   const char *need[] = {g_model, g_tokens, g_vad_model, g_lib};
   for (int i = 0; i < 4; i++) {
     if (!exists(need[i])) {
@@ -184,7 +237,7 @@ static int drain(Stream *s, SvResult *out, int max_out) {
       p_SherpaOnnxDecodeOfflineStream(g_rec, os);
       const SherpaOnnxOfflineRecognizerResult *r = p_SherpaOnnxGetOfflineStreamResult(os);
       if (r && r->text && r->text[0]) {
-        out[n].text = strdup(r->text);
+        out[n].text = sv_convert(strdup(r->text), r->lang);
         out[n].start_us = (long long)seg->start * 1000000 / VAD_RATE;
         out[n].end_us = (long long)(seg->start + seg->n) * 1000000 / VAD_RATE;
         n++;

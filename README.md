@@ -1,10 +1,15 @@
-# foresight-zh
+# foresight-zhtw
 
-**English** · [简体中文](README_zh.md)
+**English** · [繁體中文](README_zh.md)
 
-Chinese (and mixed Chinese/English) transcription for Google AI Edge Foresight on macOS,
-without modifying the app. Optionally, Foresight's chat runs on a bigger local model
-(Qwen3.8-27B) instead of the built-in Gemma 4 E2B.
+Traditional Chinese (Taiwan), Japanese and mixed Chinese/English transcription for Google
+AI Edge Foresight on macOS, without modifying the app. Optionally, Foresight's chat runs on
+a bigger local model (Qwen3.8-27B) instead of the built-in Gemma 4 E2B.
+
+Fork of [michaelpersonal/foresight-zh](https://github.com/michaelpersonal/foresight-zh).
+SenseVoice writes Simplified Chinese, so this fork converts each Chinese phrase to
+Traditional with [OpenCC](https://github.com/BYVoid/OpenCC) (`s2twp`: Taiwan characters and
+phrases, e.g. 軟體, 伺服器) and asks for Traditional Chinese or Japanese summaries.
 
 Unofficial and not affiliated with Google. No Google code or model weights are included.
 
@@ -35,19 +40,30 @@ The shim and launcher expect this repo at `~/tools/foresight-zh`.
    ./setup-sensevoice.sh
    ```
 
-3. Build the shim:
+3. Build OpenCC (arm64) for the Simplified → Traditional step, needs `cmake`. Homebrew's
+   opencc is not used because under Rosetta it is x86_64 and cannot load into Foresight.
+
+   ```bash
+   ./setup-opencc.sh
+   ```
+
+   The conversion is `s2twp` by default. To change it, write another OpenCC config name
+   (`s2tw` for characters only, `s2hk`, ...) or `off` to `~/tools/foresight-zh/opencc`.
+   Phrases SenseVoice labels as Japanese, Korean or English are never converted.
+
+4. Build the shim:
 
    ```bash
    shim/build.sh
    ```
 
-4. Optional, make a Dock/Spotlight launcher:
+5. Optional, make a Dock/Spotlight launcher:
 
    ```bash
    osacompile -o ~/Applications/"Foresight 中文.app" -e 'do shell script "$HOME/tools/foresight-zh/launch.sh"'
    ```
 
-5. Optional, install the auto-relaunch watcher. This LaunchAgent checks every 5 seconds,
+6. Optional, install the auto-relaunch watcher. This LaunchAgent checks every 5 seconds,
    and if Foresight is running without the shim, relaunches it through `launch.sh`. That
    covers plain launches from the Dock, notifications, login items and updates. The restart
    happens a few seconds after a plain launch, so avoid starting a recording in that
@@ -79,6 +95,8 @@ so Google's code signature and keychain access are untouched. The shim does thre
    transcribed with SenseVoice-Small on the CPU, typically in 15–85ms. The text goes back in
    Foresight's own result format (`text`, `is_final`, start/end in microseconds).
    Foresight's English engine still loads but never runs. See `shim/sensevoice_engine.c`.
+   Each phrase SenseVoice labels as Chinese is then converted to Traditional with OpenCC
+   (`dlopen`ed like sherpa-onnx; if it is missing, transcripts stay Simplified).
 2. **Removes the ASCII filter.** The Dart layer strips everything outside printable ASCII
    from transcripts (`[^\x20-\x7E\n\r]`), which deletes all Chinese. The shim patches that
    regex constant in memory (copy-on-write page; the binary on disk is unchanged) to
@@ -141,8 +159,10 @@ Foresight after editing it.
   notes on one query and called the calendar tool instead.
 
 - Meeting summaries are generated through the same bridge. Foresight's summary prompts are
-  English, so for a mostly-Chinese transcript the bridge asks for Simplified Chinese output,
-  keeping the template headings (`# Overview`, `# Details`).
+  English, so for a mostly-CJK transcript the bridge asks for Traditional Chinese (Taiwan)
+  output, or Japanese when the transcript contains kana, keeping the template headings
+  (`# Overview`, `# Details`). This only applies to chat served by the local server; the
+  built-in Gemma path is untouched.
 - Limits: during a meeting, Foresight finds transcript passages by searching with your
   question, so ask in the meeting's language (English questions do not match Chinese
   passages). Meetings recorded before the spacing change keep unspaced transcripts and get
@@ -178,7 +198,10 @@ The shim checks before acting and logs what it skipped:
 - `shim/test/chat_harness.c`: replays saved Foresight conversations through the chat bridge
 - `shim/sherpa-onnx-c-api.h`: sherpa-onnx C API header (v1.13.8, Apache-2.0, Xiaomi Corporation)
 - `shim/test/sv_harness.c`: feeds a raw 48kHz float32 capture through the engine
-- `setup-sensevoice.sh`: downloads the engine; `shim/build.sh`: builds the shim
+- `shim/test/tw_harness.c`: checks the Simplified → Traditional conversion
+  (`clang -o /tmp/tw shim/test/tw_harness.c shim/sensevoice_engine.c && /tmp/tw`)
+- `setup-sensevoice.sh`: downloads the engine; `setup-opencc.sh`: builds OpenCC;
+  `shim/build.sh`: builds the shim
 - `launch.sh`: launcher; `~/Applications/Foresight 中文.app` wraps it
 - `watcher.sh`, `install-watcher.sh`: auto-relaunch LaunchAgent (detects the shim through
   `~/Library/Logs/foresight-zh/shim.pid`)

@@ -416,9 +416,16 @@ static size_t on_data(void *p, size_t s, size_t n, void *u) {
   return len;
 }
 
+static int has_kana(const char *s) {
+  // Hiragana/Katakana are U+3040..U+30FF: UTF-8 E3 81 80 .. E3 83 BF.
+  for (const unsigned char *p = (const unsigned char *)s; p[0] && p[1] && p[2]; p++)
+    if (p[0] == 0xE3 && p[1] >= 0x81 && p[1] <= 0x83) return 1;
+  return 0;
+}
+
 // Foresight's meeting brief / notes prompts are English, so the model answers in
-// English even for a Chinese transcript. Ask for the transcript's language,
-// keeping the template headings the app expects.
+// English even for a Chinese or Japanese transcript. Ask for the transcript's
+// language, keeping the template headings the app expects.
 static void match_transcript_language(cJSON *msgs) {
   const cJSON *last = NULL, *m;
   cJSON_ArrayForEach(m, msgs) {
@@ -431,15 +438,24 @@ static void match_transcript_language(cJSON *msgs) {
   if (!strstr(t, "<meeting_transcript>") && !strstr(t, "<transcript_chunk>") && !strstr(t, "<new_transcript_section>"))
     return;
   if (cjk_share(t) < 0.3) return;
-  static const char note[] =
-      "\n\nLanguage: the transcript is in Chinese. Write all of your output in Simplified Chinese. "
+  // ponytail: kana anywhere in the transcript means Japanese; a mixed zh/ja
+  // meeting gets Japanese output. Per-passage language is not tracked.
+  int ja = has_kana(t);
+  static const char note_zh[] =
+      "\n\nLanguage: the transcript is in Chinese. Write all of your output in Traditional Chinese "
+      "as used in Taiwan (繁體中文). "
       "Keep the template's markdown headings (such as \"# Overview\" and \"# Details\") and any "
       "required JSON keys or field names exactly as specified, in English.";
+  static const char note_ja[] =
+      "\n\nLanguage: the transcript is in Japanese. Write all of your output in Japanese (日本語). "
+      "Keep the template's markdown headings (such as \"# Overview\" and \"# Details\") and any "
+      "required JSON keys or field names exactly as specified, in English.";
+  const char *note = ja ? note_ja : note_zh;
   cJSON *first = cJSON_GetArrayItem(msgs, 0);
   const cJSON *role = cJSON_GetObjectItemCaseSensitive(first, "role");
   const cJSON *sys = cJSON_GetObjectItemCaseSensitive(first, "content");
   if (cJSON_IsString(role) && strcmp(role->valuestring, "system") == 0 && cJSON_IsString(sys)) {
-    size_t n = strlen(sys->valuestring) + sizeof note;
+    size_t n = strlen(sys->valuestring) + strlen(note) + 1;
     char *merged = malloc(n);
     snprintf(merged, n, "%s%s", sys->valuestring, note);
     cJSON_ReplaceItemInObjectCaseSensitive(first, "content", cJSON_CreateString(merged));
@@ -450,7 +466,7 @@ static void match_transcript_language(cJSON *msgs) {
     cJSON_AddStringToObject(o, "content", note + 2);
     cJSON_InsertItemInArray(msgs, 0, o);
   }
-  logf_("chat: Chinese transcript -> asking for Chinese output");
+  logf_("chat: %s transcript -> asking for %s output", ja ? "Japanese" : "Chinese", ja ? "Japanese" : "Traditional Chinese");
 }
 
 // Runs one request against the server, appending the reply to the history.
