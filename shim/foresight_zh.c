@@ -293,7 +293,7 @@ static char *space_cjk(char *text) {
 
 // Builds an OdmlTranscriptionResultList / OdmlStatus exactly as the native
 // library does (malloc'ed; freed by OdmlDestroyTranscriptionResultList / Status).
-static void *make_result_list(SvResult *r, int n) {
+static void *make_result_list(SvResult *r, int n, int stream) {
   u64 *list = malloc(16);
   uint8_t *items = n > 0 ? calloc(n, 0x30) : NULL;
   for (int k = 0; k < n; k++) {
@@ -303,7 +303,7 @@ static void *make_result_list(SvResult *r, int n) {
     it[8] = 1;                             // is_final
     *(long long *)(it + 0x10) = r[k].start_us;
     *(long long *)(it + 0x18) = r[k].end_us;
-    if (g_trace) logf_("  sensevoice [%.2fs-%.2fs] \"%s\"", r[k].start_us / 1e6, r[k].end_us / 1e6, r[k].text);
+    if (g_trace) logf_("  sensevoice stream=%d [%.2fs-%.2fs] \"%s\"", stream, r[k].start_us / 1e6, r[k].end_us / 1e6, r[k].text);
   }
   list[0] = (u64)items;
   list[1] = (u64)n;
@@ -321,17 +321,19 @@ static void *make_ok_status(void) {
 // through to Foresight's own engine.
 static int sensevoice_call(int i, u64 a[8]) {
   SvResult r[16];
-  int n;
+  int n, stream;
   u64 results_pp, status_pp;
   if (i == H_TRANSCRIBE) {  // (proc, const float *samples, size_t n, bool, int stream, results**, status**)
-    n = sv_push((int)a[4], (const float *)a[1], (int)a[2], r, 16);
+    stream = (int)a[4];
+    n = sv_push(stream, (const float *)a[1], (int)a[2], r, 16);
     results_pp = a[5], status_pp = a[6];
   } else {                  // FinishStream: (proc, int stream, results**, status**)
-    n = sv_finish((int)a[1], r, 16);
+    stream = (int)a[1];
+    n = sv_finish(stream, r, 16);
     results_pp = a[2], status_pp = a[3];
   }
   if (n < 0) return 0;
-  if (results_pp) *(void **)results_pp = make_result_list(r, n);
+  if (results_pp) *(void **)results_pp = make_result_list(r, n, stream);
   else for (int k = 0; k < n; k++) free(r[k].text);
   if (status_pp) *(void **)status_pp = make_ok_status();
   return 1;
