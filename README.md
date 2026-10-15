@@ -51,6 +51,11 @@ The shim and launcher expect this repo at `~/tools/foresight-zh`.
    (`s2tw` for characters only, `s2hk`, ...) or `off` to `~/tools/foresight-zh/opencc`.
    Phrases SenseVoice labels as Japanese, Korean or English are never converted.
 
+   SenseVoice detects the language per phrase, which misfires on short ones. For a
+   single-language meeting, pin it: write `zh` or `ja` (also `en`, `ko`, `yue`) to
+   `~/tools/foresight-zh/language`; delete the file to go back to `auto`. Relaunch after
+   editing.
+
 4. Build the shim:
 
    ```bash

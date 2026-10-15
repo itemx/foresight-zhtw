@@ -64,6 +64,19 @@ static void *g_cc;  // opencc_t
 static char *(*p_opencc_convert_utf8)(void *, const char *, size_t);
 static void (*p_opencc_convert_utf8_free)(char *);
 static char g_cc_lib[1200], g_cc_cfg[1200];
+// ~/tools/foresight-zh/language pins SenseVoice's language (zh, ja, en, ko, yue);
+// default auto detects per phrase, which misfires on short ones.
+static char g_lang[16] = "auto";
+
+// Reads the first line of ~/tools/foresight-zh/<name> into out, if the file exists.
+static void read_config(const char *home, const char *name, char *out, size_t n) {
+  char p[1024];
+  snprintf(p, sizeof p, "%s/tools/foresight-zh/%s", home, name);
+  FILE *f = fopen(p, "r");
+  if (!f) return;
+  if (fgets(out, (int)n, f)) out[strcspn(out, "\r\n")] = 0;
+  fclose(f);
+}
 
 static int exists(const char *p) {
   struct stat st;
@@ -147,7 +160,8 @@ static void *load_thread(void *arg) {
     c.feat_config.sample_rate = VAD_RATE;
     c.feat_config.feature_dim = 80;
     c.model_config.sense_voice.model = g_model;
-    c.model_config.sense_voice.language = "auto";
+    c.model_config.sense_voice.language = g_lang;
+    logf_("sensevoice: language=%s", g_lang);
     c.model_config.sense_voice.use_itn = 1;
     c.model_config.tokens = g_tokens;
     c.model_config.num_threads = 2;
@@ -184,13 +198,9 @@ int sv_available(const char *home) {
   snprintf(g_tokens, sizeof g_tokens, "%s/sensevoice/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/tokens.txt", g_dir);
   snprintf(g_vad_model, sizeof g_vad_model, "%s/sensevoice/silero_vad.onnx", g_dir);
   snprintf(g_lib, sizeof g_lib, "%s/sherpa-onnx/lib/libsherpa-onnx-c-api.dylib", g_dir);
-  char name[64] = "s2twp", p[1024];
-  snprintf(p, sizeof p, "%s/tools/foresight-zh/opencc", home);
-  FILE *f = fopen(p, "r");
-  if (f) {
-    if (fgets(name, sizeof name, f)) name[strcspn(name, "\r\n")] = 0;
-    fclose(f);
-  }
+  char name[64] = "s2twp";
+  read_config(home, "opencc", name, sizeof name);
+  read_config(home, "language", g_lang, sizeof g_lang);
   snprintf(g_cc_lib, sizeof g_cc_lib, "%s/opencc/lib/libopencc.dylib", g_dir);
   if (strcmp(name, "off") != 0) snprintf(g_cc_cfg, sizeof g_cc_cfg, "%s/opencc/share/opencc/%s.json", g_dir, name);
   const char *need[] = {g_model, g_tokens, g_vad_model, g_lib};

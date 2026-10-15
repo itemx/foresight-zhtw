@@ -45,6 +45,10 @@ shim 和啟動指令碼預設本倉庫位於 `~/tools/foresight-zh`。
    預設轉換為 `s2twp`。要改的話，把其他 OpenCC 設定名（`s2tw` 只轉字形、`s2hk` 等）或 `off`
    寫進 `~/tools/foresight-zh/opencc`。SenseVoice 標為日文、韓文或英文的句子不會被轉換。
 
+   SenseVoice 預設逐句自動判斷語言，短句偶爾會判錯。單一語言的會議可以把語言固定下來：
+   把 `zh` 或 `ja`（也可以 `en`、`ko`、`yue`）寫進 `~/tools/foresight-zh/language`；刪掉這個檔案
+   就回到 `auto`。修改後需要重啟 Foresight。
+
 4. 構建 shim：
 
    ```bash
