@@ -201,6 +201,8 @@ int sv_available(const char *home) {
   char name[64] = "s2twp";
   read_config(home, "opencc", name, sizeof name);
   read_config(home, "language", g_lang, sizeof g_lang);
+  const char *env_lang = getenv("FORESIGHT_ZH_LANG");  // launch.sh zh|ja overrides the file
+  if (env_lang && *env_lang) snprintf(g_lang, sizeof g_lang, "%s", env_lang);
   snprintf(g_cc_lib, sizeof g_cc_lib, "%s/opencc/lib/libopencc.dylib", g_dir);
   if (strcmp(name, "off") != 0) snprintf(g_cc_cfg, sizeof g_cc_cfg, "%s/opencc/share/opencc/%s.json", g_dir, name);
   const char *need[] = {g_model, g_tokens, g_vad_model, g_lib};

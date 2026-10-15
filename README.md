@@ -51,10 +51,10 @@ The shim and launcher expect this repo at `~/tools/foresight-zh`.
    (`s2tw` for characters only, `s2hk`, ...) or `off` to `~/tools/foresight-zh/opencc`.
    Phrases SenseVoice labels as Japanese, Korean or English are never converted.
 
-   SenseVoice detects the language per phrase, which misfires on short ones. For a
-   single-language meeting, pin it: write `zh` or `ja` (also `en`, `ko`, `yue`) to
-   `~/tools/foresight-zh/language`; delete the file to go back to `auto`. Relaunch after
-   editing.
+   SenseVoice detects the language per phrase, which misfires on short ones (Mandarin
+   phrases come out as Japanese now and then). Pin it per launch: `launch.sh zh` or
+   `launch.sh ja` (also `en`, `ko`, `yue`). A default can go in
+   `~/tools/foresight-zh/language`; with neither, it is `auto`.
 
 4. Build the shim:
 
@@ -65,7 +65,8 @@ The shim and launcher expect this repo at `~/tools/foresight-zh`.
 5. Optional, make a Dock/Spotlight launcher:
 
    ```bash
-   osacompile -o ~/Applications/"Foresight 中文.app" -e 'do shell script "$HOME/tools/foresight-zh/launch.sh"'
+   osacompile -o ~/Applications/"Foresight 中文.app" -e 'do shell script "$HOME/tools/foresight-zh/launch.sh zh"'
+   osacompile -o ~/Applications/"Foresight 日本語.app" -e 'do shell script "$HOME/tools/foresight-zh/launch.sh ja"'
    ```
 
 6. Optional, install the auto-relaunch watcher. This LaunchAgent checks every 5 seconds,
